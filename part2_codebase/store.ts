@@ -1,4 +1,4 @@
-import { Client, Appointment } from "./types";
+import type { Client, Appointment } from "./types.ts";
 
 // --- In-memory data store ---
 
