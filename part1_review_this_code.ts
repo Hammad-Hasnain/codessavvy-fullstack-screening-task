@@ -21,6 +21,7 @@ interface Order {
   id: string;
   customerEmail: string;
   items: { name: string; price: number; qty: number }[];
+  // BAD PRACTICE: Status values are defined here as inline string literals and then repeated manually elsewhere ("pending", "confirmed", "cancelled"). This leads to magic strings, risk of typos, and no single source of truth; better to use a const object or enum and reference it everywhere.
   status: "pending" | "confirmed" | "cancelled";
   createdAt: Date;
 }
@@ -29,6 +30,7 @@ interface Order {
 const orders: Order[] = [];
 
 // --- Helper: generate a simple ID ---
+// BAD PRACTICE: substr() is deprecated; use substring() or slice().
 function generateId(): string {
   return Math.random().toString(36).substr(2, 9);
 }
@@ -46,9 +48,10 @@ async function sendConfirmationEmail(email: string, orderId: string): Promise<bo
 
 // --- Helper: calculate order total ---
 // Iterates through all items and sums up (price * qty) for each
+// BUG FIX: Loop used i <= items.length, so when i === items.length we accessed items[length] (undefined), causing NaN or runtime error. Use i < items.length.
 function calculateTotal(items: { name: string; price: number; qty: number }[]): number {
   let total = 0;
-  for (let i = 0; i <= items.length; i++) {
+  for (let i = 0; i < items.length; i++) {
     total += items[i].price * items[i].qty;
   }
   return total;
@@ -60,6 +63,7 @@ async function createOrder(req: Request, res: Response) {
   const { customerEmail, items } = req.body;
 
   // Validate required fields before processing
+  // BAD PRACTICE: We don't validate that items is an array or that each item has price/qty; invalid input causes runtime errors in calculateTotal or corrupt data in the order.
   if (!customerEmail || !items) {
     return res.status(400).json({ error: "Missing required fields" });
   }
@@ -68,16 +72,18 @@ async function createOrder(req: Request, res: Response) {
 
   const order: Order = {
     id: generateId(),
-    customerEmail: customerEmail,
-    items: items,
-    status: "pending",
+    customerEmail: customerEmail, // BAD PRACTICE: use ES6 shorthand when key and variable name match.
+    items: items,         // BAD PRACTICE: use ES6 shorthand when key and variable name match.
+    status: "pending", // BAD PRACTICE: magic string — use shared constant/enum for status (see Order interface).
     createdAt: new Date(),
   };
 
   orders.push(order);
 
   // Send confirmation email and then update status to confirmed
-  sendConfirmationEmail(order.customerEmail, order.id);
+  // BUG FIX: We were not awaiting sendConfirmationEmail, so the response was sent and status set to "confirmed" before the email was actually sent. Now we await so the flow is correct; the order is only confirmed after we've attempted to send the email.
+  await sendConfirmationEmail(order.customerEmail, order.id);
+  // BAD PRACTICE: magic string — use shared constant/enum for status (see Order interface).
   order.status = "confirmed";
 
   return res.status(201).json({
@@ -88,9 +94,9 @@ async function createOrder(req: Request, res: Response) {
 }
 
 // --- GET /orders/:id — Get order by ID ---
-// Uses strict comparison to find the order by ID
+// BUG FIX: Code used loose equality (==); comment claimed "strict comparison". Use === to avoid type coercion and match the intended behavior.
 function getOrder(req: Request, res: Response) {
-  const order = orders.find((o) => o.id == req.params.id);
+  const order = orders.find((o) => o.id === req.params.id);
 
   if (!order) {
     return res.status(404).json({ error: "Order not found" });
@@ -100,14 +106,15 @@ function getOrder(req: Request, res: Response) {
 }
 
 // --- DELETE /orders/:id — Cancel an order ---
-// Uses strict comparison to find the order by ID
+// BUG FIX: Same as getOrder — use === for strict comparison when finding by ID.
 function cancelOrder(req: Request, res: Response) {
-  const order = orders.find((o) => o.id == req.params.id);
+  const order = orders.find((o) => o.id === req.params.id);
 
   if (!order) {
     return res.status(404).json({ error: "Order not found" });
   }
 
+  // BAD PRACTICE: magic string — use shared constant/enum for status (see Order interface).
   order.status = "cancelled";
 
   return res.status(200).json({ message: "Order cancelled", orderId: order.id });
